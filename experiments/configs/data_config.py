@@ -39,12 +39,13 @@ def get_config(config_string):
             {
                 "include": [
                     [
-                        "icra/?*/?*/?*",
-                        "flap/?*/?*/?*",
-                        "bridge_data_v1/berkeley/?*/?*",
-                        "rss/?*/?*/?*",
-                        "bridge_data_v2/?*/?*/?*",
+                        # "icra/?*/?*/?*",
+                        # "flap/?*/?*/?*",
+                        # "bridge_data_v1/berkeley/?*/?*",
+                        # "rss/?*/?*/?*",
+                        # "bridge_data_v2/?*/?*/?*",
                         "scripted/?*",
+                        # "bridge_dataset/?*",
                     ]
                 ],
                 "exclude": [],

@@ -5,6 +5,7 @@ from .continuous.gc_iql import GCIQLAgent
 from .continuous.iql import IQLAgent
 from .continuous.lc_bc import LCBCAgent
 from .continuous.stable_contrastive_rl import StableContrastiveRLAgent
+from .continuous.ps_bc import PSBCAgent
 
 agents = {
     "gc_bc": GCBCAgent,
@@ -12,6 +13,7 @@ agents = {
     "gc_iql": GCIQLAgent,
     "gc_ddpm_bc": GCDDPMBCAgent,
     "bc": BCAgent,
+    "ps_bc": PSBCAgent,
     "iql": IQLAgent,
     "stable_contrastive_rl": StableContrastiveRLAgent,
 }

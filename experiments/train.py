@@ -78,7 +78,9 @@ def main(_):
         )
         for path in FLAGS.bridgedata_config.include
     ]
-
+    # print(task_paths)
+    # train_paths = [os.path.join(os.path.join(task_paths[0][0], "train"), rec) for rec in os.listdir(os.path.join(task_paths[0][0], "train"))]
+    # val_paths = [os.path.join(os.path.join(task_paths[0][0], "val"), rec) for rec in os.listdir(os.path.join(task_paths[0][0], "val"))]
     train_paths = [
         [os.path.join(path, "train/out.tfrecord") for path in sub_list]
         for sub_list in task_paths

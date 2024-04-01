@@ -133,7 +133,7 @@ class GCBCAgent(flax.struct.PyTreeNode):
             encoder=encoder_def,
             goal_encoder=goal_encoder_def,
             use_proprio=use_proprio,
-            stop_gradient=False,
+            stop_gradient=True,
         )
 
         network_kwargs["activate_final"] = True

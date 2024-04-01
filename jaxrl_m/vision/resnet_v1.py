@@ -1,6 +1,6 @@
 import functools as ft
 from functools import partial
-from typing import Any, Callable, Sequence, Tuple
+from typing import Any, Callable, Sequence, Tuple, Optional
 
 import flax.linen as nn
 import jax.numpy as jnp
@@ -203,7 +203,7 @@ class ResNetEncoder(nn.Module):
     @nn.compact
     def __call__(self, observations: jnp.ndarray, train: bool = True, cond_var=None):
         # put inputs in [-1, 1]
-        x = observations.astype(jnp.float32) / 127.5 - 1.0
+        x = observations.astype(jnp.float32) #/ 127.5 - 1.0
 
         if self.add_spatial_coordinates:
             x = AddSpatialCoordinates(dtype=self.dtype)(x)
@@ -213,9 +213,10 @@ class ResNetEncoder(nn.Module):
             use_bias=False,
             dtype=self.dtype,
             kernel_init=nn.initializers.kaiming_normal(),
+            # padding='VALID'
         )
         if self.norm == "batch":
-            raise NotImplementedError
+            norm = partial(nn.BatchNorm, use_running_average=True, momentum=0.1, epsilon=1e-5, dtype=self.dtype)
         elif self.norm == "group":
             norm = partial(MyGroupNorm, num_groups=4, epsilon=1e-5, dtype=self.dtype)
         elif self.norm == "layer":

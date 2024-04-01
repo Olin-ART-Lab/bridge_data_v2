@@ -14,9 +14,10 @@ from jaxrl_m.common.typing import PRNGKey
 from jaxrl_m.common.common import JaxRLTrainState, ModuleDict, nonpytree_field
 from jaxrl_m.networks.actor_critic_nets import Policy
 from jaxrl_m.networks.mlp import MLP
+from jaxrl_m.networks.ps import TaskModule, RobotModule
 
 
-class BCAgent(flax.struct.PyTreeNode):
+class PSBCAgent(flax.struct.PyTreeNode):
     state: JaxRLTrainState
     lr_schedule: Any = nonpytree_field()
 
@@ -101,6 +102,7 @@ class BCAgent(flax.struct.PyTreeNode):
         rng: PRNGKey,
         observations: FrozenDict,
         actions: jnp.ndarray,
+        anchors: jnp.ndarray,
         # Model architecture
         encoder_def: nn.Module,
         use_proprio: bool = False,
@@ -141,7 +143,7 @@ class BCAgent(flax.struct.PyTreeNode):
         tx = optax.adam(lr_schedule)
 
         rng, init_rng = jax.random.split(rng)
-        params = model_def.init(init_rng, actor=[observations])["params"]
+        params = model_def.init(init_rng, actor=observations)["params"]
 
         rng, create_rng = jax.random.split(rng)
         state = JaxRLTrainState.create(

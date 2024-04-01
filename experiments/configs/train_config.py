@@ -4,12 +4,12 @@ from ml_collections import ConfigDict
 def get_config(config_string):
     base_real_config = dict(
         batch_size=256,
-        num_steps=int(2e6),
+        num_steps=int(2e5),
         log_interval=100,
-        eval_interval=5000,
-        save_interval=5000,
-        save_dir="path/to/save/dir",
-        data_path="path/to/data",
+        eval_interval=500,
+        save_interval=500,
+        save_dir="/home/ksuresh/bridge_data_saves",
+        data_path="/home/ksuresh/bridge_datasets",
         resume_path=None,
         seed=42,
     )
@@ -69,6 +69,34 @@ def get_config(config_string):
                 **base_real_config,
             )
         ),
+        "bc": ConfigDict(
+            dict(
+                agent="bc",
+                agent_kwargs=dict(
+                    network_kwargs=dict(hidden_dims=(256, 256, 256), dropout_rate=0.1),
+                    policy_kwargs=dict(
+                        tanh_squash_distribution=False,
+                        fixed_std=[1, 1, 1, 1, 1, 1, 1],
+                        state_dependent_std=False,
+                    ),
+                    use_proprio=False,
+                    learning_rate=3e-4,
+                    warmup_steps=2000,
+                    decay_steps=int(2e6),
+                ),
+                dataset_kwargs=dict(
+                    goal_relabeling_strategy="uniform",
+                    goal_relabeling_kwargs=dict(reached_proportion=0.0),
+                    relabel_actions=True,
+                    **base_data_config,
+                ),
+                encoder="resnetv1-18",
+                encoder_kwargs=dict(
+                    pooling_method="avg", add_spatial_coordinates=True, act="swish"
+                ),
+                **base_real_config,
+            )
+        ),
         "gc_bc": ConfigDict(
             dict(
                 agent="gc_bc",
@@ -92,7 +120,7 @@ def get_config(config_string):
                     relabel_actions=True,
                     **base_data_config,
                 ),
-                encoder="resnetv1-34-bridge",
+                encoder="resnetv1-18",
                 encoder_kwargs=dict(
                     pooling_method="avg", add_spatial_coordinates=True, act="swish"
                 ),
