@@ -160,6 +160,7 @@ class BottleneckResNetBlock(nn.Module):
     norm: ModuleDef
     act: Callable
     strides: Tuple[int, int] = (1, 1)
+    moco: bool = False
 
     @nn.compact
     def __call__(self, x):
@@ -167,7 +168,7 @@ class BottleneckResNetBlock(nn.Module):
         y = self.conv(self.filters, (1, 1))(x)
         y = self.norm()(y)
         y = self.act(y)
-        y = self.conv(self.filters, (3, 3), self.strides)(y)
+        y = self.conv(self.filters, (3, 3), self.strides, padding=((1,1),(1,1)) if self.moco else 'SAME')(y)
         y = self.norm()(y)
         y = self.act(y)
         y = self.conv(self.filters * 4, (1, 1))(y)
@@ -199,6 +200,7 @@ class ResNetEncoder(nn.Module):
     use_multiplicative_cond: bool = False
     num_spatial_blocks: int = 8
     use_film: bool = False
+    moco: bool = False
 
     @nn.compact
     def __call__(self, observations: jnp.ndarray, train: bool = True, cond_var=None):
@@ -213,10 +215,9 @@ class ResNetEncoder(nn.Module):
             use_bias=False,
             dtype=self.dtype,
             kernel_init=nn.initializers.kaiming_normal(),
-            # padding='VALID'
         )
         if self.norm == "batch":
-            norm = partial(nn.BatchNorm, use_running_average=True, momentum=0.1, epsilon=1e-5, dtype=self.dtype)
+            norm = partial(nn.BatchNorm, use_running_average=not train, momentum=0.9, dtype=self.dtype)
         elif self.norm == "group":
             norm = partial(MyGroupNorm, num_groups=4, epsilon=1e-5, dtype=self.dtype)
         elif self.norm == "layer":
@@ -232,7 +233,7 @@ class ResNetEncoder(nn.Module):
 
         x = norm(name="norm_init")(x)
         x = act(x)
-        x = nn.max_pool(x, (3, 3), strides=(2, 2), padding="SAME")
+        x = nn.max_pool(x, window_shape=(3, 3), strides=(2, 2), padding=((1, 1), (1, 1)) if self.moco else "SAME")
         for i, block_size in enumerate(self.stage_sizes):
             for j in range(block_size):
                 stride = (2, 2) if i > 0 and j == 0 else (1, 1)
@@ -242,6 +243,7 @@ class ResNetEncoder(nn.Module):
                     conv=conv,
                     norm=norm,
                     act=act,
+                    moco=self.moco,
                 )(x)
                 if self.use_film:
                     assert (
@@ -335,5 +337,12 @@ resnetv1_configs = {
         block_cls=BottleneckResNetBlock,
         num_spatial_blocks=8,
         use_film=True,
+    ),
+    "mococonv5": ft.partial(
+        ResNetEncoder,
+        stage_sizes=[3, 4, 6, 3],
+        block_cls=BottleneckResNetBlock,
+        moco=True,
+        norm="batch",
     ),
 }

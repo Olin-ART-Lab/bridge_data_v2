@@ -11,23 +11,6 @@ from pdb import set_trace as bp
 import torchvision.models as models
 from torch.nn.modules.linear import Identity
 
-class MoCoConvEncoder(nn.Module):
-    moco_checkpoint_path: str
-    resnet: ResNetEncoder = ResNetEncoder
-
-    def setup(self):
-        pass
-
-    def __call__(self, observations: jnp.ndarray):
-        return self.resnet(observations)
-
-# moco_conv_configs = {
-#     "moco_conv3": {},
-#     "moco_conv4": {},
-#     "moco_conv5": {},
-#     "moco_conv5_robocloud": MoCoConvEncoder(stage_sizes=[3, 4, 6, 3], block_cls=BottleneckResNetBlock),
-# }
-# (stage_sizes=[3, 4, 6, 3], block_cls=BottleneckResNetBlock)
 
 def _get_flax_keys(keys, stage_sizes=[3, 4, 6, 3]):
     layerblock = None
@@ -79,13 +62,14 @@ def add_to_params(params_dict, nested_keys, param, is_conv=False):
         first_key = nested_keys[0]
         if first_key not in params_dict:
             params_dict[first_key] = {}
-    
-        add_to_params(params_dict[first_key], nested_keys[1:], param, ('Conv' in first_key and \
+        add_to_params(params_dict[first_key], nested_keys[1:], param, ('conv' in first_key.lower() and \
                                                                      nested_keys[-1] != 'bias'))
 
 def torch_to_linen(state_dict, get_flax_keys):
     flax_params = {'params': {}, 'batch_stats': {}}
     for key, tensor in state_dict.items():
+        if not key.startswith('module.encoder_q'):
+            continue
         keys = key.split('.')[2:]
         if len(keys):
             if keys[0] == 'fc':
@@ -93,26 +77,22 @@ def torch_to_linen(state_dict, get_flax_keys):
             flax_keys = get_flax_keys(keys)
             if flax_keys[-1] is not None:
                 if flax_keys[-1] in ('mean', 'var'):
-                    add_to_params(flax_params['batch_stats'], flax_keys, tensor.detach().numpy())
+                    add_to_params(flax_params['batch_stats'], flax_keys, tensor.detach().cpu().numpy())
                 else:
-                    add_to_params(flax_params['params'], flax_keys, tensor.detach().numpy())
+                    add_to_params(flax_params['params'], flax_keys, tensor.detach().cpu().numpy())
     return flax_params
 
-# Things to check:
-# Types of the parameters
-# Check the outputs of each block
-# Maybe check the padding of the conv layers
-# 
 if __name__ == "__main__":
     checkpoint = torch.load('/home/ksuresh/bridge_data_checkpts/moco_conv5_robocloud.pth', map_location=torch.device('cpu'))
+    resnet_params = FrozenDict(torch_to_linen(checkpoint['state_dict'], _get_flax_keys))
+
     state_dict = checkpoint['state_dict']
-    resnet_params = FrozenDict(torch_to_linen(state_dict, _get_flax_keys))
-    batch = jnp.ones((1, 224, 224, 3))
+    batch = jnp.ones((1, 224, 224, 3), dtype=jnp.float32)
 
-    moco = ResNetEncoder(stage_sizes=[3, 4, 6, 3], block_cls=BottleneckResNetBlock, norm="batch")
-
-    out = moco.apply(resnet_params, batch)
-    print(out.tolist()[0][:10])
+    moco = ResNetEncoder(stage_sizes=[3, 4, 6, 3], block_cls=BottleneckResNetBlock, norm="batch", moco=True)
+    out, state = moco.apply(resnet_params, batch, train = False, capture_intermediates=True, mutable=["intermediates"])
+    intermediates = state['intermediates']
+    
 
     model = models.resnet50(pretrained=False, progress=False)
     # rename moco pre-trained keys
@@ -125,10 +105,50 @@ if __name__ == "__main__":
             state_dict[k[len("module.encoder_q."):]] = state_dict[k]
         # delete renamed or unused k
         del state_dict[k]
+
+    ## Checking if first conv layer is same    
+    jax_conv1 = resnet_params['params']['conv_init']['kernel']
+    pyt_conv1 = state_dict['conv1.weight']
+    pyt_conv1 = np.transpose(pyt_conv1, (2, 3, 1, 0))
+    np.testing.assert_almost_equal(pyt_conv1, jax_conv1, decimal=6)
+
+    jax_bn1 = resnet_params['params']['norm_init']['bias']
+    pyt_bn1 = state_dict['bn1.bias']
+    pyt_bn1 = np.transpose(pyt_bn1)
+    np.testing.assert_almost_equal(pyt_bn1, jax_bn1, decimal=6)
+
+    jax_bn1 = resnet_params['batch_stats']['norm_init']['var']
+    pyt_bn1 = state_dict['bn1.running_var']
+    pyt_bn1 = np.transpose(pyt_bn1)
+    np.testing.assert_almost_equal(pyt_bn1, jax_bn1, decimal=6)
+
     msg = model.load_state_dict(state_dict, strict=False)
     model.fc = Identity()
-
-    # model.double()
+    model.eval()
     batch = np.ones((1, 3, 224, 224), dtype=np.float32)
     batch = torch.from_numpy(batch)
-    print(model(batch).tolist()[0][:10])
+
+    activation = {}
+    def get_activation(name):
+        def hook(model, input, output):
+            activation[name] = output.detach()
+        return hook
+    
+    # model.conv1.register_forward_hook(get_activation('conv1'))
+    # output = model(batch)
+
+    # jax_out = intermediates['conv_init']['__call__'][0]
+    # pyt_out = activation['conv1'].numpy()
+    # jax_out = np.transpose(jax_out, (0, 3, 1, 2))
+    # np.testing.assert_almost_equal(pyt_out, jax_out, decimal=4)
+    # model.maxpool.register_forward_hook(get_activation('out'))
+    # model.layer4[2].bn3.register_forward_hook(get_activation('out'))
+    # output = model(batch)
+    # jax_out = intermediates['BottleneckResNetBlock_0']['BatchNorm_0']['__call__'][0]
+    # jax_out = intermediates['BottleneckResNetBlock_15']['c'][0]
+    # pyt_out = activation['out'].numpy()
+    # jax_out = np.transpose(jax_out, (0, 3, 1, 2))
+    # np.testing.assert_almost_equal(pyt_out, jax_out, decimal=4)
+    
+    ## Check embedding layer
+    np.testing.assert_almost_equal(out, model(batch).detach().numpy(), decimal=5)
