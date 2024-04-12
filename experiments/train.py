@@ -1,3 +1,4 @@
+import json
 import os
 from functools import partial
 
@@ -79,16 +80,16 @@ def main(_):
         for path in FLAGS.bridgedata_config.include
     ]
     # print(task_paths)
-    # train_paths = [os.path.join(os.path.join(task_paths[0][0], "train"), rec) for rec in os.listdir(os.path.join(task_paths[0][0], "train"))]
-    # val_paths = [os.path.join(os.path.join(task_paths[0][0], "val"), rec) for rec in os.listdir(os.path.join(task_paths[0][0], "val"))]
-    train_paths = [
-        [os.path.join(path, "train/out.tfrecord") for path in sub_list]
-        for sub_list in task_paths
-    ]
-    val_paths = [
-        [os.path.join(path, "val/out.tfrecord") for path in sub_list]
-        for sub_list in task_paths
-    ]
+    train_paths = [os.path.join(os.path.join(task_paths[0][0], "train"), rec) for rec in os.listdir(os.path.join(task_paths[0][0], "train"))]
+    val_paths = [os.path.join(os.path.join(task_paths[0][0], "val"), rec) for rec in os.listdir(os.path.join(task_paths[0][0], "val"))]
+    # train_paths = [
+    #     [os.path.join(path, "train/out.tfrecord") for path in sub_list]
+    #     for sub_list in task_paths
+    # ]
+    # val_paths = [
+    #     [os.path.join(path, "val/out.tfrecord") for path in sub_list]
+    #     for sub_list in task_paths
+    # ]
 
     train_data = BridgeDataset(
         train_paths,
@@ -142,11 +143,18 @@ def main(_):
     agent = agents[FLAGS.config.agent].create(
         rng=construct_rng,
         observations=example_batch["observations"],
-        goals=example_batch["goals"],
+        # goals=example_batch["goals"],
         actions=example_batch["actions"],
         encoder_def=encoder_def,
+        anchors=jnp.load(FLAGS.config.anchors_file),
         **FLAGS.config.agent_kwargs,
     )
+    checkpoint_path = checkpoints.save_checkpoint(
+        save_dir, agent, step=1, keep=1e6
+    )
+    with open(f'{save_dir}/data.json', 'w') as f:
+        f.write(FLAGS.config.to_json() + '\n')
+    quit()
     if FLAGS.config.resume_path is not None:
         agent = checkpoints.restore_checkpoint(FLAGS.config.resume_path, target=agent)
     # replicate agent across devices

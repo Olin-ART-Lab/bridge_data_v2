@@ -69,6 +69,33 @@ def get_config(config_string):
                 **base_real_config,
             )
         ),
+        "ps_bc": ConfigDict(
+            dict(
+                agent="ps_bc",
+                agent_kwargs=dict(
+                    network_kwargs=dict(hidden_dims=(256, 256, 256), dropout_rate=0.1),
+                    policy_kwargs=dict(
+                        tanh_squash_distribution=False,
+                        fixed_std=[1, 1, 1, 1, 1, 1, 1],
+                        state_dependent_std=False,
+                    ),
+                    use_proprio=False,
+                    learning_rate=3e-4,
+                    warmup_steps=2000,
+                    decay_steps=int(2e6),
+                ),
+                anchors_file="anchor_states_sweep_embeddings.npy",
+                dataset_kwargs=dict(
+                    goal_relabeling_strategy="uniform",
+                    goal_relabeling_kwargs=dict(reached_proportion=0.0),
+                    relabel_actions=True,
+                    **base_data_config,
+                ),
+                encoder="mococonv5",
+                encoder_kwargs=dict(),
+                **base_real_config,
+            )
+        ),
         "bc": ConfigDict(
             dict(
                 agent="bc",

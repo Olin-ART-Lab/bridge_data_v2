@@ -12,6 +12,7 @@ from absl import app, flags, logging
 
 import numpy as np
 import tensorflow as tf
+import jax.numpy as jnp
 
 import cv2
 import jax
@@ -41,7 +42,7 @@ flags.DEFINE_multi_string(
 flags.DEFINE_multi_string(
     "checkpoint_config_path", None, "Path to checkpoint config JSON", required=True
 )
-flags.DEFINE_string("goal_type", None, "Goal type", required=True)
+flags.DEFINE_string("goal_type", None, "Goal type", required=False)
 flags.DEFINE_integer("im_size", None, "Image size", required=True)
 flags.DEFINE_string("video_save_path", None, "Path to save video")
 flags.DEFINE_string(
@@ -82,7 +83,9 @@ ENV_PARAMS = {
 def load_checkpoint(checkpoint_weights_path, checkpoint_config_path):
     with open(checkpoint_config_path, "r") as f:
         config = json.load(f)
-
+    with open("/home/ksuresh/bridge_datasets/bridge_dataset/1.0.0/action_proprio_stats_4203a9a0c2e65f37c33c477d42e8f9d87929e12a4df4e51dbf1479f417d7f3e5.json") as json_file:
+        config["bridgedata_config"] = {}
+        config["bridgedata_config"]["action_proprio_metadata"] = json.load(json_file)
     # create encoder from wandb config
     encoder_def = encoders[config["encoder"]](**config["encoder_kwargs"])
 
@@ -100,7 +103,7 @@ def load_checkpoint(checkpoint_weights_path, checkpoint_config_path):
         img_obs_shape = (1, FLAGS.im_size, FLAGS.im_size, 3)
     else:
         img_obs_shape = (1, obs_horizon, FLAGS.im_size, FLAGS.im_size, 3)
-    example_obs = {"image": np.zeros(img_obs_shape, dtype=np.uint8)}
+    example_obs = {"image": np.zeros(img_obs_shape, dtype=np.uint8), "proprio": np.zeros((1, 7), dtype=np.float32)}
 
     # Set goals
     if FLAGS.goal_type == "gc":
@@ -110,7 +113,8 @@ def load_checkpoint(checkpoint_weights_path, checkpoint_config_path):
     elif FLAGS.goal_type == "lc":
         example_goals = {"language": np.zeros((1, 512), dtype=np.float32)}
     else:
-        raise ValueError(f"Unknown goal type: {FLAGS.goal_type}")
+        pass
+        # raise ValueError(f"Unknown goal type: {FLAGS.goal_type}")
 
     # create agent from wandb config
     rng = jax.random.PRNGKey(0)
@@ -118,9 +122,10 @@ def load_checkpoint(checkpoint_weights_path, checkpoint_config_path):
     agent = agents[config["agent"]].create(
         rng=construct_rng,
         observations=example_obs,
-        goals=example_goals,
+        # goals=example_goals,
         actions=example_actions,
         encoder_def=encoder_def,
+        anchors=jnp.load(config["anchors_file"]),
         **config["agent_kwargs"],
     )
 
@@ -136,8 +141,10 @@ def load_checkpoint(checkpoint_weights_path, checkpoint_config_path):
         nonlocal rng
         rng, key = jax.random.split(rng)
         action = jax.device_get(
-            agent.sample_actions(obs, goal_obs, seed=key, argmax=FLAGS.deterministic)
+            # agent.sample_actions(obs, goal_obs, seed=key, argmax=FLAGS.deterministic)
+            agent.sample_actions(obs, seed=key, argmax=FLAGS.deterministic)
         )
+        print(action)
         action = action * action_std + action_mean
         return action
 
@@ -262,6 +269,7 @@ def main(_):
             cv2.imshow("img_view", bgr_img)
             cv2.waitKey(100)
 
+        goal_obs = {}
         # request goal
         if FLAGS.goal_type == "gc":
             image_goal = request_goal_image(image_goal, widowx_client)
@@ -271,8 +279,9 @@ def main(_):
             instruction = request_goal_language(None, text_processors)
             goal_obs = {"language": instruction}
             input("Press [Enter] to start.")
-        else:
-            raise ValueError(f"Unknown goal type: {FLAGS.goal_type}")
+        # else:
+            # pass
+            # raise ValueError(f"Unknown goal type: {FLAGS.goal_type}")
 
         # reset env
         widowx_client.reset()

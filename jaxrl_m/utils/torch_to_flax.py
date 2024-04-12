@@ -1,17 +1,4 @@
-from typing import Any, Callable, Sequence, Tuple
-import jax.prng
-import torch
-import flax.linen as nn
-import jax.numpy as jnp
-import jax
 import numpy as np
-from resnet_v1 import ResNetEncoder, BottleneckResNetBlock, MocoResNetEncoder
-from flax.core import FrozenDict
-from pdb import set_trace as bp
-
-import torchvision.models as models
-from torch.nn.modules.linear import Identity
-
 
 def _get_flax_keys(keys, stage_sizes=[3, 4, 6, 3]):
     layerblock = None
@@ -82,35 +69,3 @@ def torch_to_linen(state_dict, get_flax_keys):
                 else:
                     add_to_params(flax_params['params'], flax_keys, tensor.detach().cpu().numpy())
     return flax_params
-
-if __name__ == "__main__":
-    checkpoint = torch.load('/home/ksuresh/bridge_data_checkpts/moco_conv5_robocloud.pth', map_location=torch.device('cpu'))
-    resnet_params = FrozenDict(torch_to_linen(checkpoint['state_dict'], _get_flax_keys))
-
-    state_dict = checkpoint['state_dict']
-    batch = jnp.ones((1, 224, 224, 3), dtype=jnp.float32)
-
-    moco = ResNetEncoder(stage_sizes=[3, 4, 6, 3], block_cls=BottleneckResNetBlock, norm="batch", moco=True)
-    out = moco.apply(resnet_params, batch, train = False)
-    
-
-    model = models.resnet50(pretrained=False, progress=False)
-    # rename moco pre-trained keys
-    state_dict = checkpoint['state_dict']
-    for k in list(state_dict.keys()):
-        # retain only encoder_q up to before the embedding layer
-        if k.startswith('module.encoder_q'
-                        ) and not k.startswith('module.encoder_q.fc'):
-            # remove prefix
-            state_dict[k[len("module.encoder_q."):]] = state_dict[k]
-        # delete renamed or unused k
-        del state_dict[k]
-
-    msg = model.load_state_dict(state_dict, strict=False)
-    model.fc = Identity()
-    model.eval()
-    batch = np.ones((1, 3, 224, 224), dtype=np.float32)
-    batch = torch.from_numpy(batch)
-    
-    ## Check embedding layer
-    np.testing.assert_almost_equal(out, model(batch).detach().numpy(), decimal=5)

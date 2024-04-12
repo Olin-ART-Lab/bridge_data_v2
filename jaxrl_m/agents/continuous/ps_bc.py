@@ -14,7 +14,12 @@ from jaxrl_m.common.typing import PRNGKey
 from jaxrl_m.common.common import JaxRLTrainState, ModuleDict, nonpytree_field
 from jaxrl_m.networks.actor_critic_nets import Policy
 from jaxrl_m.networks.mlp import MLP
-from jaxrl_m.networks.ps import TaskModule, RobotModule
+from jaxrl_m.networks.ps import GausPiNetwork, TaskModule, RobotModule
+from flax.core import freeze, unfreeze
+from jaxrl_m.utils.torch_to_flax import torch_to_linen, _get_flax_keys
+
+from flax.core import FrozenDict
+import torch
 
 
 class PSBCAgent(flax.struct.PyTreeNode):
@@ -26,7 +31,7 @@ class PSBCAgent(flax.struct.PyTreeNode):
         def loss_fn(params, rng):
             rng, key = jax.random.split(rng)
             dist = self.state.apply_fn(
-                {"params": params},
+                params,
                 batch["observations"],
                 temperature=1.0,
                 train=True,
@@ -71,9 +76,9 @@ class PSBCAgent(flax.struct.PyTreeNode):
         argmax=False
     ) -> jnp.ndarray:
         dist = self.state.apply_fn(
-            {"params": self.state.params},
+            self.state.params,
             observations,
-            temperature=temperature,
+            train=False,
             name="actor",
         )
         if argmax:
@@ -85,7 +90,7 @@ class PSBCAgent(flax.struct.PyTreeNode):
     @jax.jit
     def get_debug_metrics(self, batch, **kwargs):
         dist = self.state.apply_fn(
-            {"params": self.state.params},
+            self.state.params,
             batch["observations"],
             temperature=1.0,
             name="actor",
@@ -118,16 +123,23 @@ class PSBCAgent(flax.struct.PyTreeNode):
         decay_steps: int = 1000000,
     ):
         encoder_def = EncodingWrapper(
-            encoder=encoder_def, use_proprio=use_proprio, stop_gradient=False
+            encoder=encoder_def, use_proprio=True, stop_gradient=True
         )
 
         network_kwargs["activate_final"] = True
         networks = {
-            "actor": Policy(
+            "actor": GausPiNetwork(
                 encoder_def,
-                MLP(**network_kwargs),
-                action_dim=actions.shape[-1],
-                **policy_kwargs
+                TaskModule(
+                    hidden_dim=256,
+                    latent_interface_dim=128,
+                    anchors=anchors,
+                ),
+                RobotModule(
+                    num_actions=actions.shape[-1],
+                    hidden_dim=256,
+                    latent_interface_dim=128,
+                ),
             )
         }
 
@@ -143,7 +155,22 @@ class PSBCAgent(flax.struct.PyTreeNode):
         tx = optax.adam(lr_schedule)
 
         rng, init_rng = jax.random.split(rng)
-        params = model_def.init(init_rng, actor=observations)["params"]
+        params = model_def.init(init_rng, actor=[observations])
+        checkpoint = torch.load(
+            "/home/ksuresh/bridge_data_checkpts/moco_conv5_robocloud.pth",
+            map_location=torch.device("cpu"),
+        )
+        resnet_params = torch_to_linen(checkpoint["state_dict"], _get_flax_keys)
+        params = unfreeze(params)
+
+        params["params"]["modules_actor"]["encoder"]["encoder"] = resnet_params[
+            "params"
+        ]
+        params["batch_stats"]["modules_actor"]["encoder"]["encoder"] = resnet_params[
+            "batch_stats"
+        ]
+
+        params = freeze(params)
 
         rng, create_rng = jax.random.split(rng)
         state = JaxRLTrainState.create(
