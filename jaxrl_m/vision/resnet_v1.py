@@ -7,7 +7,7 @@ import jax.numpy as jnp
 import numpy as np
 
 from jaxrl_m.vision.film_conditioning_layer import FilmConditioning
-from jaxrl_m.utils.torch_to_flax import torch_to_linen, _get_flax_keys
+from jaxrl_m.utils.torch_to_flax import torch_to_linen
 
 from flax.core import FrozenDict
 import torch
@@ -292,26 +292,6 @@ class ResNetEncoder(nn.Module):
             raise ValueError("pooling method not found")
 
         return x
-
-class MocoResNetEncoder(nn.Module):
-    encoder: ResNetEncoder = ResNetEncoder(
-        stage_sizes=[3, 4, 6, 3],
-        block_cls=BottleneckResNetBlock,
-        moco=True,
-        norm="batch",
-    )
-
-    def setup(self):
-        checkpoint = torch.load(
-            "/home/ksuresh/bridge_data_checkpts/moco_conv5_robocloud.pth",
-            map_location=torch.device("cpu"),
-        )
-        self.params = FrozenDict(
-            torch_to_linen(checkpoint["state_dict"], _get_flax_keys)
-        )
-
-    def __call__(self, observations: jnp.ndarray):
-        return self.encoder.apply(self.params, observations, train=False)
 
 
 resnetv1_configs = {

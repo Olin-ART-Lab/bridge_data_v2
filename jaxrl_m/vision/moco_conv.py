@@ -95,15 +95,11 @@ if __name__ == "__main__":
     
 
     model = models.resnet50(pretrained=False, progress=False)
-    # rename moco pre-trained keys
     state_dict = checkpoint['state_dict']
     for k in list(state_dict.keys()):
-        # retain only encoder_q up to before the embedding layer
         if k.startswith('module.encoder_q'
                         ) and not k.startswith('module.encoder_q.fc'):
-            # remove prefix
             state_dict[k[len("module.encoder_q."):]] = state_dict[k]
-        # delete renamed or unused k
         del state_dict[k]
 
     msg = model.load_state_dict(state_dict, strict=False)

@@ -16,7 +16,7 @@ from jaxrl_m.networks.actor_critic_nets import Policy
 from jaxrl_m.networks.mlp import MLP
 from jaxrl_m.networks.ps import GausPiNetwork, TaskModule, RobotModule
 from flax.core import freeze, unfreeze
-from jaxrl_m.utils.torch_to_flax import torch_to_linen, _get_flax_keys
+from jaxrl_m.utils.torch_to_flax import torch_to_linen, resnet_flax_keys, gauspi_flax_keys
 
 from flax.core import FrozenDict
 import torch
@@ -75,17 +75,20 @@ class PSBCAgent(flax.struct.PyTreeNode):
         temperature: float = 1.0,
         argmax=False
     ) -> jnp.ndarray:
-        dist = self.state.apply_fn(
+        dist, state = self.state.apply_fn(
             self.state.params,
             observations,
             train=False,
             name="actor",
+            capture_intermediates=True,
+            mutable=["intermediates"],
         )
-        if argmax:
-            actions = dist.mode()
-        else:
-            actions = dist.sample(seed=seed)
-        return actions
+        return dist, state
+        # if argmax:
+        #     actions = dist.mode()
+        # else:
+        #     actions = dist.sample(seed=seed)
+        # return actions
 
     @jax.jit
     def get_debug_metrics(self, batch, **kwargs):
@@ -131,7 +134,7 @@ class PSBCAgent(flax.struct.PyTreeNode):
             "actor": GausPiNetwork(
                 encoder_def,
                 TaskModule(
-                    hidden_dim=256,
+                    hidden_dim=2055,
                     latent_interface_dim=128,
                     anchors=anchors,
                 ),
@@ -160,15 +163,37 @@ class PSBCAgent(flax.struct.PyTreeNode):
             "/home/ksuresh/bridge_data_checkpts/moco_conv5_robocloud.pth",
             map_location=torch.device("cpu"),
         )
-        resnet_params = torch_to_linen(checkpoint["state_dict"], _get_flax_keys)
+        state_dict = checkpoint["state_dict"]
+        for k in list(state_dict.keys()):
+            if not k.startswith('module.encoder_q'):
+                del state_dict[k]
+        resnet_params = torch_to_linen(state_dict, resnet_flax_keys)
+
+        checkpoint = torch.load(
+            "/home/ksuresh/bridge_data_v2/Agent.pth",
+            map_location=torch.device("cpu"),
+        )
+        gauspi_params = torch_to_linen(checkpoint["decoder"], gauspi_flax_keys, start_idx=0)
         params = unfreeze(params)
 
         params["params"]["modules_actor"]["encoder"]["encoder"] = resnet_params[
             "params"
         ]
+        params["params"]["modules_actor"]["task_module"] = gauspi_params[
+            "params"
+        ]["task_module"]
+        params["params"]["modules_actor"]["robot_module"] = gauspi_params[
+            "params"
+        ]["robot_module"]
         params["batch_stats"]["modules_actor"]["encoder"]["encoder"] = resnet_params[
             "batch_stats"
         ]
+        params["batch_stats"]["modules_actor"]["task_module"] = gauspi_params[
+            "batch_stats"
+        ]["task_module"]
+        params["batch_stats"]["modules_actor"]["robot_module"] = gauspi_params[
+            "batch_stats"
+        ]["robot_module"]
 
         params = freeze(params)
 

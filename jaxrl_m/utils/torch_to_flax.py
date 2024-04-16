@@ -1,6 +1,21 @@
 import numpy as np
 
-def _get_flax_keys(keys, stage_sizes=[3, 4, 6, 3]):
+def gauspi_flax_keys(keys):
+    if len(keys) == 3:
+        module, layer, param = keys
+    if param == 'weight':
+        param = 'scale' if 'norm' in layer.lower() else 'kernel'
+    if 'running' in param:
+        param = 'mean' if 'mean' in param else 'var'
+    
+    if module == 'Ptask':
+        module = 'task_module'
+    if module == 'Probot':
+        module = 'robot_module'
+
+    return [module, layer, param]
+
+def resnet_flax_keys(keys, stage_sizes=[3, 4, 6, 3]):
     layerblock = None
     layer_idx = None
     if len(keys) == 2:  # first layer 
@@ -53,12 +68,10 @@ def add_to_params(params_dict, nested_keys, param, is_conv=False):
         add_to_params(params_dict[first_key], nested_keys[1:], param, ('conv' in first_key.lower() and \
                                                                      nested_keys[-1] != 'bias'))
 
-def torch_to_linen(state_dict, get_flax_keys):
+def torch_to_linen(state_dict, get_flax_keys, start_idx=2):
     flax_params = {'params': {}, 'batch_stats': {}}
     for key, tensor in state_dict.items():
-        if not key.startswith('module.encoder_q'):
-            continue
-        keys = key.split('.')[2:]
+        keys = key.split('.')[start_idx:]
         if len(keys):
             if keys[0] == 'fc':
                 continue

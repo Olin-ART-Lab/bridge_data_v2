@@ -16,14 +16,14 @@ class TaskModule(nn.Module):
     @nn.compact
     def __call__(self, x: jnp.ndarray, train: bool = False) -> jnp.ndarray:
         if len(x.shape) == 1:
-            x = jnp.expand_dims(x, axis=0)
-        task_anchor_state = jnp.concatenate([x, self.anchors], axis=0)
-        x = nn.BatchNorm(use_running_average=not train)(task_anchor_state)
-        x = nn.Dense(self.hidden_dim, kernel_init=default_init())(x)
+            x = jnp.expand_dims(x, axis=1)
+        task_anchor_state = jnp.concatenate([x, self.anchors.transpose()], axis=1).transpose()
+        x = nn.BatchNorm(momentum=0.9, use_running_average=not train, name="norm_input")(task_anchor_state)
+        x = nn.Dense(self.hidden_dim, name="linear1")(x)
         x = nn.relu(x)
-        x = nn.Dense(self.hidden_dim, kernel_init=default_init())(x)
+        x = nn.Dense(self.hidden_dim, name="linear2")(x)
         x = nn.relu(x)
-        x = nn.Dense(self.hidden_dim, kernel_init=default_init())(x)
+        x = nn.Dense(self.latent_interface_dim, name="linear3")(x)
         x = nn.normalize(x)
         x_task = x[0:-self.latent_interface_dim, :]
         x_anchor = x[-self.latent_interface_dim:, :]
@@ -37,26 +37,27 @@ class RobotModule(nn.Module):
     hidden_dim: int
     @nn.compact
     def __call__(self, x: jnp.ndarray, robot_state: jnp.ndarray, train: bool = False) -> jnp.ndarray:
-        action_emb = nn.BatchNorm(use_running_average=not train)(robot_state)
-        action_emb = nn.Dense(self.hidden_dim - self.latent_interface_dim, kernel_init=default_init())(action_emb)
+        action_emb = nn.BatchNorm(momentum=0.9, use_running_average=not train, name="norm_input")(robot_state)
+        action_emb = nn.Dense(self.hidden_dim - self.latent_interface_dim, kernel_init=default_init(), name="linearR")(action_emb)
         if len(action_emb.shape) == 1:
             action_emb = jnp.expand_dims(action_emb, axis=0)
         x = jnp.concatenate([action_emb, x], axis=1)
-        x = nn.Dense(self.hidden_dim, kernel_init=default_init())(x)
+        x = nn.Dense(self.hidden_dim, name="linear1")(x)
         x = nn.relu(x)
-        x = nn.Dense(self.hidden_dim, kernel_init=default_init())(x)
+        x = nn.Dense(self.hidden_dim, name="linear2")(x)
         x = nn.relu(x)
+        x = nn.Dense(35, name="linear3")(x)
+        return x
+        # mean = nn.Dense(self.num_actions, kernel_init=default_init(), name="action_mean")(x)
+        # log_std = nn.Dense(self.num_actions, kernel_init=default_init(), name="action_log_std")(x)
 
-        mean = nn.Dense(self.num_actions, kernel_init=default_init())(x)
-        log_std = nn.Dense(self.num_actions, kernel_init=default_init())(x)
-
-        log_std = jnp.clip(log_std, a_min=LOG_SIG_MIN, a_max=LOG_SIG_MAX)
+        # log_std = jnp.clip(log_std, a_min=LOG_SIG_MIN, a_max=LOG_SIG_MAX)
         
-        distribution = distrax.MultivariateNormalDiag(
-            loc=mean, scale_diag=jnp.exp(log_std)
-        )
+        # distribution = distrax.MultivariateNormalDiag(
+        #     loc=mean, scale_diag=jnp.exp(log_std)
+        # )
 
-        return distribution
+        # return distribution
 
 
 class GausPiNetwork(nn.Module):

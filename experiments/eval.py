@@ -69,7 +69,7 @@ NO_PITCH_ROLL = False
 NO_YAW = False
 STICKY_GRIPPER_NUM_STEPS = 1
 WORKSPACE_BOUNDS = [[0.1, -0.15, -0.01, -1.57, 0], [0.45, 0.25, 0.25, 1.57, 0]]
-CAMERA_TOPICS = [{"name": "/blue/image_raw"}]
+CAMERA_TOPICS = [{"name": "/D435/color/image_raw", "flip": True}]
 FIXED_STD = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
 ENV_PARAMS = {
     "camera_topics": CAMERA_TOPICS,
@@ -100,10 +100,10 @@ def load_checkpoint(checkpoint_weights_path, checkpoint_config_path):
 
     # Set observations
     if obs_horizon is None:
-        img_obs_shape = (1, FLAGS.im_size, FLAGS.im_size, 3)
+        img_obs_shape = (FLAGS.im_size, FLAGS.im_size, 3)
     else:
         img_obs_shape = (1, obs_horizon, FLAGS.im_size, FLAGS.im_size, 3)
-    example_obs = {"image": np.zeros(img_obs_shape, dtype=np.uint8), "proprio": np.zeros((1, 7), dtype=np.float32)}
+    example_obs = {"image": np.zeros(img_obs_shape, dtype=np.uint8), "proprio": np.zeros((7), dtype=np.float32)}
 
     # Set goals
     if FLAGS.goal_type == "gc":
@@ -140,13 +140,12 @@ def load_checkpoint(checkpoint_weights_path, checkpoint_config_path):
     def get_action(obs, goal_obs):
         nonlocal rng
         rng, key = jax.random.split(rng)
-        action = jax.device_get(
+        action, state = jax.device_get(
             # agent.sample_actions(obs, goal_obs, seed=key, argmax=FLAGS.deterministic)
             agent.sample_actions(obs, seed=key, argmax=FLAGS.deterministic)
         )
-        print(action)
-        action = action * action_std + action_mean
-        return action
+        # action = action * action_std + action_mean
+        return action.copy()[:, :7]
 
     text_processor = None
     if FLAGS.goal_type == "lc":
@@ -299,6 +298,8 @@ def main(_):
             while move_status != WidowXStatus.SUCCESS:
                 move_status = widowx_client.move(eep, duration=1.5)
 
+
+        # loadedactions = np.load("/home/ksuresh/bridge_datasets/scripted_np/2022-12-08_pnp_rigid_objects/train/out.npy", allow_pickle=True)[0]['actions']
         # do rollout
         last_tstep = time.time()
         images = []
@@ -338,12 +339,12 @@ def main(_):
 
                     last_tstep = time.time()
                     actions = get_action(obs, goal_obs)
-
                     if len(actions.shape) == 1:
                         actions = actions[None]
                     for i in range(FLAGS.act_exec_horizon):
                         action = actions[i]
-                        action += np.random.normal(0, FIXED_STD)
+                        # action += np.random.normal(0, FIXED_STD)
+                        print(action)
 
                         # sticky gripper logic
                         if (action[-1] < 0.5) != is_gripper_closed:
@@ -368,6 +369,7 @@ def main(_):
                             action[5] = 0
 
                         # perform environment step
+                        # widowx_client.step_action(loadedactions[t], blocking=FLAGS.blocking)
                         widowx_client.step_action(action, blocking=FLAGS.blocking)
 
                         # save image
