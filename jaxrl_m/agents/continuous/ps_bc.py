@@ -33,11 +33,12 @@ class PSBCAgent(flax.struct.PyTreeNode):
             dist = self.state.apply_fn(
                 params,
                 batch["observations"],
-                temperature=1.0,
                 train=True,
-                rngs={"dropout": key},
                 name="actor",
+                mutable=["batch_stats"],
             )
+            if type(dist) == tuple:
+                dist = dist[0]
             pi_actions = dist.mode()
             log_probs = dist.log_prob(batch["actions"])
             mse = ((pi_actions - batch["actions"]) ** 2).sum(-1)
@@ -83,20 +84,22 @@ class PSBCAgent(flax.struct.PyTreeNode):
             capture_intermediates=True,
             mutable=["intermediates"],
         )
-        return dist, state
-        # if argmax:
-        #     actions = dist.mode()
-        # else:
-        #     actions = dist.sample(seed=seed)
-        # return actions
+        # return dist, state
+        if argmax:
+            actions = dist.mode()
+        else:
+            actions = dist.sample(seed=seed)
+        return actions
 
     @jax.jit
     def get_debug_metrics(self, batch, **kwargs):
-        dist = self.state.apply_fn(
+        dist, state = self.state.apply_fn(
             self.state.params,
-            batch["observations"],
-            temperature=1.0,
+            batch['observations'],
+            train=False,
             name="actor",
+            capture_intermediates=True,
+            mutable=["intermediates"],
         )
         pi_actions = dist.mode()
         log_probs = dist.log_prob(batch["actions"])
@@ -179,21 +182,21 @@ class PSBCAgent(flax.struct.PyTreeNode):
         params["params"]["modules_actor"]["encoder"]["encoder"] = resnet_params[
             "params"
         ]
-        params["params"]["modules_actor"]["task_module"] = gauspi_params[
-            "params"
-        ]["task_module"]
-        params["params"]["modules_actor"]["robot_module"] = gauspi_params[
-            "params"
-        ]["robot_module"]
+        # params["params"]["modules_actor"]["task_module"] = gauspi_params[
+        #     "params"
+        # ]["task_module"]
+        # params["params"]["modules_actor"]["robot_module"] = gauspi_params[
+        #     "params"
+        # ]["robot_module"]
         params["batch_stats"]["modules_actor"]["encoder"]["encoder"] = resnet_params[
             "batch_stats"
         ]
-        params["batch_stats"]["modules_actor"]["task_module"] = gauspi_params[
-            "batch_stats"
-        ]["task_module"]
-        params["batch_stats"]["modules_actor"]["robot_module"] = gauspi_params[
-            "batch_stats"
-        ]["robot_module"]
+        # params["batch_stats"]["modules_actor"]["task_module"] = gauspi_params[
+        #     "batch_stats"
+        # ]["task_module"]
+        # params["batch_stats"]["modules_actor"]["robot_module"] = gauspi_params[
+        #     "batch_stats"
+        # ]["robot_module"]
 
         params = freeze(params)
 

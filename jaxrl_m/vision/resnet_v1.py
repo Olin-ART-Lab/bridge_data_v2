@@ -137,6 +137,7 @@ class ResNetBlock(nn.Module):
     norm: ModuleDef
     act: Callable
     strides: Tuple[int, int] = (1, 1)
+    moco: bool = False
 
     @nn.compact
     def __call__(self, x):
@@ -209,7 +210,7 @@ class ResNetEncoder(nn.Module):
     @nn.compact
     def __call__(self, observations: jnp.ndarray, train: bool = True, cond_var=None):
         # put inputs in [-1, 1]
-        x = observations.astype(jnp.float32) / 127.5 - 1.0
+        x = observations.astype(jnp.float32)# / 127.5 - 1.0
 
         if self.add_spatial_coordinates:
             x = AddSpatialCoordinates(dtype=self.dtype)(x)

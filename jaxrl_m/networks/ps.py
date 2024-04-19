@@ -12,22 +12,28 @@ class TaskModule(nn.Module):
     hidden_dim: int
     latent_interface_dim: int # this is the dim of the space between the task and robot modules
     anchors: jnp.ndarray
+    use_anchors: bool = False
 
     @nn.compact
     def __call__(self, x: jnp.ndarray, train: bool = False) -> jnp.ndarray:
         if len(x.shape) == 1:
             x = jnp.expand_dims(x, axis=1)
-        task_anchor_state = jnp.concatenate([x, self.anchors.transpose()], axis=1).transpose()
-        x = nn.BatchNorm(momentum=0.9, use_running_average=not train, name="norm_input")(task_anchor_state)
+
+        if self.use_anchors:
+            task_anchor_state = jnp.concatenate([x, self.anchors.transpose()], axis=1).transpose()
+            x = nn.BatchNorm(momentum=0.9, use_running_average=not train, name="norm_input")(task_anchor_state)
+        else:
+            x = nn.BatchNorm(momentum=0.9, use_running_average=not train, name="norm_input")(x)
         x = nn.Dense(self.hidden_dim, name="linear1")(x)
         x = nn.relu(x)
         x = nn.Dense(self.hidden_dim, name="linear2")(x)
         x = nn.relu(x)
         x = nn.Dense(self.latent_interface_dim, name="linear3")(x)
         x = nn.normalize(x)
+        if not self.use_anchors:
+            return x
         x_task = x[0:-self.latent_interface_dim, :]
         x_anchor = x[-self.latent_interface_dim:, :]
-
         relative_interface = jnp.matmul(x_task, x_anchor.T)
         return relative_interface
 
@@ -46,18 +52,18 @@ class RobotModule(nn.Module):
         x = nn.relu(x)
         x = nn.Dense(self.hidden_dim, name="linear2")(x)
         x = nn.relu(x)
-        x = nn.Dense(35, name="linear3")(x)
-        return x
-        # mean = nn.Dense(self.num_actions, kernel_init=default_init(), name="action_mean")(x)
-        # log_std = nn.Dense(self.num_actions, kernel_init=default_init(), name="action_log_std")(x)
+        # x = nn.Dense(35, name="linear3")(x)
+        # return x
+        mean = nn.Dense(self.num_actions, name="action_mean")(x)
+        log_std = nn.Dense(self.num_actions, name="action_log_std")(x)
 
-        # log_std = jnp.clip(log_std, a_min=LOG_SIG_MIN, a_max=LOG_SIG_MAX)
+        log_std = jnp.clip(log_std, a_min=LOG_SIG_MIN, a_max=LOG_SIG_MAX)
         
-        # distribution = distrax.MultivariateNormalDiag(
-        #     loc=mean, scale_diag=jnp.exp(log_std)
-        # )
+        distribution = distrax.MultivariateNormalDiag(
+            loc=mean, scale_diag=jnp.exp(log_std)
+        )
 
-        # return distribution
+        return distribution
 
 
 class GausPiNetwork(nn.Module):

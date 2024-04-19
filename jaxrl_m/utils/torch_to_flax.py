@@ -73,7 +73,7 @@ def torch_to_linen(state_dict, get_flax_keys, start_idx=2):
     for key, tensor in state_dict.items():
         keys = key.split('.')[start_idx:]
         if len(keys):
-            if keys[0] == 'fc':
+            if keys[0] == 'fc' or keys[-1] == 'num_batches_tracked':
                 continue
             flax_keys = get_flax_keys(keys)
             if flax_keys[-1] is not None:

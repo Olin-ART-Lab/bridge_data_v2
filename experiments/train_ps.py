@@ -143,10 +143,10 @@ def main(_):
     agent = agents[FLAGS.config.agent].create(
         rng=construct_rng,
         observations=example_batch["observations"],
-        goals=example_batch["goals"],
+        # goals=example_batch["goals"],
         actions=example_batch["actions"],
         encoder_def=encoder_def,
-        # anchors=jnp.load(FLAGS.config.anchors_file),
+        anchors=jnp.load(FLAGS.config.anchors_file),
         **FLAGS.config.agent_kwargs,
     )
     # checkpoint_path = checkpoints.save_checkpoint(
