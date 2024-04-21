@@ -7,16 +7,6 @@ from einops import rearrange, repeat
 
 
 class EncodingWrapper(nn.Module):
-    """
-    Encodes observations into a single flat encoding, adding additional
-    functionality for adding proprioception and stopping the gradient.
-
-    Args:
-        encoder: The encoder network.
-        use_proprio: Whether to concatenate proprioception (after encoding).
-        stop_gradient: Whether to stop the gradient after the encoder.
-    """
-
     encoder: nn.Module
     use_proprio: bool
     stop_gradient: bool
@@ -29,6 +19,27 @@ class EncodingWrapper(nn.Module):
             encoding = jax.lax.stop_gradient(encoding)
         return encoding
 
+class GCEncodingWrapperPS(nn.Module):
+    encoder: nn.Module
+    use_proprio: bool
+    stop_gradient: bool
+
+    def __call__(
+        self,
+        observations_and_goals: Tuple[Dict[str, jnp.ndarray], Dict[str, jnp.ndarray]], train: bool = False,
+    ) -> jnp.ndarray:
+        observations, goals = observations_and_goals
+        obs_image = observations["image"]
+        goal_image = goals["image"]
+
+        encoding = self.encoder(obs_image, train=train)
+        goal_encoding = self.encoder(goal_image, train=train)
+
+        encoding = jnp.concatenate([encoding, goal_encoding], axis=-1)
+
+        encoding = jnp.concatenate([observations["proprio"], encoding], axis=-1).transpose()
+        encoding = jax.lax.stop_gradient(encoding)
+        return encoding
 
 class GCEncodingWrapper(nn.Module):
     """

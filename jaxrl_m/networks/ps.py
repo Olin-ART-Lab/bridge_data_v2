@@ -13,6 +13,7 @@ class TaskModule(nn.Module):
     latent_interface_dim: int # this is the dim of the space between the task and robot modules
     anchors: jnp.ndarray
     use_anchors: bool = False
+    dropout_rate: float = 0.1
 
     @nn.compact
     def __call__(self, x: jnp.ndarray, train: bool = False) -> jnp.ndarray:
@@ -23,10 +24,13 @@ class TaskModule(nn.Module):
             task_anchor_state = jnp.concatenate([x, self.anchors.transpose()], axis=1).transpose()
             x = nn.BatchNorm(momentum=0.9, use_running_average=not train, name="norm_input")(task_anchor_state)
         else:
+            x = x.transpose()
             x = nn.BatchNorm(momentum=0.9, use_running_average=not train, name="norm_input")(x)
         x = nn.Dense(self.hidden_dim, name="linear1")(x)
+        x = nn.Dropout(rate=self.dropout_rate)(x, deterministic=not train)
         x = nn.relu(x)
         x = nn.Dense(self.hidden_dim, name="linear2")(x)
+        x = nn.Dropout(rate=self.dropout_rate)(x, deterministic=not train)
         x = nn.relu(x)
         x = nn.Dense(self.latent_interface_dim, name="linear3")(x)
         x = nn.normalize(x)
@@ -41,6 +45,7 @@ class RobotModule(nn.Module):
     num_actions: int
     latent_interface_dim: int # this is the dim of the space between the task and robot modules
     hidden_dim: int
+    dropout_rate: float = 0.1
     @nn.compact
     def __call__(self, x: jnp.ndarray, robot_state: jnp.ndarray, train: bool = False) -> jnp.ndarray:
         action_emb = nn.BatchNorm(momentum=0.9, use_running_average=not train, name="norm_input")(robot_state)
@@ -49,8 +54,10 @@ class RobotModule(nn.Module):
             action_emb = jnp.expand_dims(action_emb, axis=0)
         x = jnp.concatenate([action_emb, x], axis=1)
         x = nn.Dense(self.hidden_dim, name="linear1")(x)
+        x = nn.Dropout(rate=self.dropout_rate)(x, deterministic=not train)
         x = nn.relu(x)
         x = nn.Dense(self.hidden_dim, name="linear2")(x)
+        x = nn.Dropout(rate=self.dropout_rate)(x, deterministic=not train)
         x = nn.relu(x)
         # x = nn.Dense(35, name="linear3")(x)
         # return x
@@ -73,7 +80,7 @@ class GausPiNetwork(nn.Module):
 
     @nn.compact
     def __call__(self, x: jnp.ndarray, train: bool = False) -> jnp.ndarray:
-        robot_state = x["proprio"]
+        robot_state = x[0]["proprio"]
         x = self.encoder(x, train=train)
         relative_interface = self.task_module(x, train=train)
         dist = self.robot_module(relative_interface, robot_state, train=train)

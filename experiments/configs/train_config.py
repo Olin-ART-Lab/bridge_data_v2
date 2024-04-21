@@ -4,12 +4,12 @@ from ml_collections import ConfigDict
 def get_config(config_string):
     base_real_config = dict(
         batch_size=256,
-        num_steps=int(2e5),
+        num_steps=int(4e5),
         log_interval=100,
-        eval_interval=500,
-        save_interval=500,
-        save_dir="/home/ksuresh/bridge_data_saves",
-        data_path="/home/ksuresh/bridge_datasets",
+        eval_interval=1000,
+        save_interval=5000,
+        save_dir="/home/krishna/bridge_data_saves",
+        data_path="/home/krishna/bridge_data_v2",
         resume_path=None,
         seed=42,
     )

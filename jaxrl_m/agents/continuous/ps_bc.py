@@ -2,7 +2,7 @@ from functools import partial
 from typing import Any
 import jax
 import jax.numpy as jnp
-from jaxrl_m.common.encoding import EncodingWrapper
+from jaxrl_m.common.encoding import EncodingWrapper, GCEncodingWrapperPS
 import numpy as np
 import flax
 import flax.linen as nn
@@ -32,10 +32,11 @@ class PSBCAgent(flax.struct.PyTreeNode):
             rng, key = jax.random.split(rng)
             dist = self.state.apply_fn(
                 params,
-                batch["observations"],
+                (batch["observations"], batch["goals"]),
                 train=True,
                 name="actor",
                 mutable=["batch_stats"],
+                rngs={"dropout": key},
             )
             if type(dist) == tuple:
                 dist = dist[0]
@@ -71,6 +72,7 @@ class PSBCAgent(flax.struct.PyTreeNode):
     def sample_actions(
         self,
         observations: np.ndarray,
+        goals: np.ndarray,
         *,
         seed: PRNGKey,
         temperature: float = 1.0,
@@ -78,7 +80,7 @@ class PSBCAgent(flax.struct.PyTreeNode):
     ) -> jnp.ndarray:
         dist, state = self.state.apply_fn(
             self.state.params,
-            observations,
+            (observations, goals),
             train=False,
             name="actor",
             capture_intermediates=True,
@@ -95,7 +97,7 @@ class PSBCAgent(flax.struct.PyTreeNode):
     def get_debug_metrics(self, batch, **kwargs):
         dist, state = self.state.apply_fn(
             self.state.params,
-            batch['observations'],
+            (batch["observations"], batch["goals"]),
             train=False,
             name="actor",
             capture_intermediates=True,
@@ -113,6 +115,7 @@ class PSBCAgent(flax.struct.PyTreeNode):
         rng: PRNGKey,
         observations: FrozenDict,
         actions: jnp.ndarray,
+        goals: FrozenDict,
         anchors: jnp.ndarray,
         # Model architecture
         encoder_def: nn.Module,
@@ -128,7 +131,7 @@ class PSBCAgent(flax.struct.PyTreeNode):
         warmup_steps: int = 1000,
         decay_steps: int = 1000000,
     ):
-        encoder_def = EncodingWrapper(
+        encoder_def = GCEncodingWrapperPS(
             encoder=encoder_def, use_proprio=True, stop_gradient=True
         )
 
@@ -137,7 +140,7 @@ class PSBCAgent(flax.struct.PyTreeNode):
             "actor": GausPiNetwork(
                 encoder_def,
                 TaskModule(
-                    hidden_dim=2055,
+                    hidden_dim=1028,
                     latent_interface_dim=128,
                     anchors=anchors,
                 ),
@@ -161,9 +164,9 @@ class PSBCAgent(flax.struct.PyTreeNode):
         tx = optax.adam(lr_schedule)
 
         rng, init_rng = jax.random.split(rng)
-        params = model_def.init(init_rng, actor=[observations])
+        params = model_def.init(init_rng, actor=[(observations, goals)])
         checkpoint = torch.load(
-            "/home/ksuresh/bridge_data_checkpts/moco_conv5_robocloud.pth",
+            "/home/krishna/bridge_data_v2/moco_conv5_robocloud.pth",
             map_location=torch.device("cpu"),
         )
         state_dict = checkpoint["state_dict"]
@@ -172,11 +175,11 @@ class PSBCAgent(flax.struct.PyTreeNode):
                 del state_dict[k]
         resnet_params = torch_to_linen(state_dict, resnet_flax_keys)
 
-        checkpoint = torch.load(
-            "/home/ksuresh/bridge_data_v2/Agent.pth",
-            map_location=torch.device("cpu"),
-        )
-        gauspi_params = torch_to_linen(checkpoint["decoder"], gauspi_flax_keys, start_idx=0)
+        # checkpoint = torch.load(
+        #     "/home/ksuresh/bridge_data_v2/Agent.pth",
+        #     map_location=torch.device("cpu"),
+        # )
+        # gauspi_params = torch_to_linen(checkpoint["decoder"], gauspi_flax_keys, start_idx=0)
         params = unfreeze(params)
 
         params["params"]["modules_actor"]["encoder"]["encoder"] = resnet_params[
