@@ -46,7 +46,7 @@ class RobotModule(nn.Module):
         x = nn.relu(x)
         x = nn.Dense(self.hidden_dim, name="linear2")(x)
         x = nn.relu(x)
-        x = nn.Dense(35, name="linear3")(x)
+        x = nn.Dense(70, name="linear3")(x)
         return x
         # mean = nn.Dense(self.num_actions, kernel_init=default_init(), name="action_mean")(x)
         # log_std = nn.Dense(self.num_actions, kernel_init=default_init(), name="action_log_std")(x)

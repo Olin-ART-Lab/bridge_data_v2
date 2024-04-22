@@ -370,7 +370,7 @@ def main(_):
 
                         # perform environment step
                         # widowx_client.step_action(loadedactions[t], blocking=FLAGS.blocking)
-                        widowx_client.step_action(action, blocking=FLAGS.blocking)
+                        widowx_client.step_action(np.array([0.1, 0.1, 0.1, 0.0, 0.0, 0.0, 0.0]), blocking=FLAGS.blocking)
 
                         # save image
                         images.append(image_obs)
